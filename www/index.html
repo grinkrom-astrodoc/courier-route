@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>CourierRoute</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      --bg:     #0f172a;
+      --surf:   #1e293b;
+      --surf2:  #334155;
+      --surf3:  #475569;
+      --txt:    #f1f5f9;
+      --txt2:   #94a3b8;
+      --wolt:   #009de0;
+      --bolt:   #34d186;
+      --acc:    #6366f1;
+      --warn:   #f59e0b;
+      --ok:     #22c55e;
+      --err:    #ef4444;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html, body { height:100%; overflow:hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--txt);
+      display: flex; flex-direction: column; height: 100dvh;
+    }
+
+    /* ── Offline bar ── */
+    #offline-bar {
+      display: none; background: var(--err); color: #fff;
+      text-align: center; font-size: 13px; font-weight: 600;
+      padding: 6px; flex-shrink: 0;
+    }
+    #offline-bar.show { display: block; }
+
+    /* ── Header ── */
+    #header {
+      background: var(--surf); padding: 14px 18px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--surf2); flex-shrink: 0;
+    }
+    #header h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.3px; }
+    #order-badge {
+      background: var(--acc); color: #fff;
+      border-radius: 20px; padding: 4px 12px;
+      font-size: 12px; font-weight: 700; display: none;
+    }
+
+    /* ── Tab bar ── */
+    #tabbar {
+      background: var(--surf); border-top: 1px solid var(--surf2);
+      display: flex; flex-shrink: 0;
+    }
+    .tab {
+      flex: 1; padding: 10px 0 8px;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: none; border: none; color: var(--txt2);
+      font-size: 10px; font-weight: 600; cursor: pointer; transition: color .2s;
+    }
+    .tab .ico { font-size: 22px; line-height: 1; }
+    .tab.active { color: var(--acc); }
+
+    /* ── Screens ── */
+    .screen { display: none; flex: 1; overflow-y: auto; padding: 14px 14px 80px; }
+    .screen.active { display: block; }
+    #scr-map { display: none; flex: 1; padding: 10px 10px 72px; }
+    #scr-map.active { display: flex; flex-direction: column; }
+    #map { flex: 1; border-radius: 16px; min-height: 200px; }
+
+    /* ── FAB ── */
+    #fab {
+      position: fixed; bottom: 68px; right: 16px;
+      width: 54px; height: 54px; border-radius: 50%;
+      background: var(--acc); color: #fff; font-size: 26px;
+      border: none; cursor: pointer;
+      box-shadow: 0 4px 18px rgba(99,102,241,.55);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 50; transition: transform .15s;
+    }
+    #fab:active { transform: scale(.92); }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; padding: 60px 20px; }
+    .empty .eico { font-size: 60px; margin-bottom: 14px; opacity: .3; }
+    .empty h3 { font-size: 17px; color: var(--txt2); margin-bottom: 6px; }
+    .empty p  { font-size: 14px; color: var(--txt2); }
+
+    /* ── Order card ── */
+    .order-card {
+      background: var(--surf); border-radius: 16px;
+      margin-bottom: 12px; overflow: hidden;
+      border-left: 4px solid transparent;
+    }
+    .order-card.wolt { border-left-color: var(--wolt); }
+    .order-card.bolt { border-left-color: var(--bolt); }
+    .order-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px 8px;
+    }
+    .plat-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 700;
+    }
+    .plat-badge.wolt { background: rgba(0,157,224,.15); color: var(--wolt); }
+    .plat-badge.bolt { background: rgba(52,209,134,.15); color: var(--bolt); }
+    .del-btn {
+      background: rgba(239,68,68,.14); color: var(--err);
+      border: none; border-radius: 8px; width: 32px; height: 32px;
+      font-size: 15px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stop-row {
+      display: flex; align-items: flex-start; gap: 11px; padding: 7px 14px;
+    }
+    .stop-ico {
+      width: 30px; height: 30px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; flex-shrink: 0; margin-top: 2px;
+    }
+    .stop-ico.rest { background: rgba(245,158,11,.15); }
+    .stop-ico.cli  { background: rgba(34,197,94,.15); }
+    .stop-lbl  { font-size: 10px; color: var(--txt2); text-transform: uppercase; letter-spacing: .5px; }
+    .stop-name { font-size: 12px; color: var(--txt2); margin-top: 1px; }
+    .stop-addr { font-size: 14px; font-weight: 500; margin-top: 2px; }
+    .stop-geo  { font-size: 11px; margin-top: 3px; }
+    .geo-ok    { color: var(--ok); }
+    .geo-fail  { color: var(--err); }
+    .vline { width: 2px; height: 14px; background: var(--surf2); margin-left: 28px; }
+
+    /* ── Modal ── */
+    .overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.75); z-index: 200;
+      align-items: flex-end; justify-content: center;
+    }
+    .overlay.open { display: flex; }
+    .modal {
+      background: var(--surf); border-radius: 22px 22px 0 0;
+      padding: 22px 18px 32px; width: 100%;
+      max-height: 92dvh; overflow-y: auto;
+    }
+    .modal-title {
+      font-size: 18px; font-weight: 800;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .btn-x {
+      background: var(--surf2); border: none; color: var(--txt2);
+      width: 30px; height: 30px; border-radius: 50%;
+      font-size: 15px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Form ── */
+    .flabel {
+      display: block; font-size: 11px; font-weight: 700;
+      color: var(--txt2); text-transform: uppercase; letter-spacing: .6px;
+      margin-bottom: 7px;
+    }
+    .fgroup { margin-bottom: 15px; }
+    .finput {
+      width: 100%; background: var(--bg);
+      border: 1.5px solid var(--surf2); border-radius: 12px;
+      padding: 12px 14px; color: var(--txt); font-size: 16px;
+      outline: none; transition: border-color .2s;
+    }
+    .finput:focus { border-color: var(--acc); }
+    .finput + .finput { margin-top: 8px; }
+    .plat-sel { display: flex; gap: 8px; }
+    .plat-opt {
+      flex: 1; padding: 12px 8px; border-radius: 12px;
+      border: 2px solid var(--surf2); background: none;
+      color: var(--txt2); font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: all .2s; text-align: center;
+    }
+    .plat-opt.wolt.sel { border-color: var(--wolt); background: rgba(0,157,224,.12); color: var(--wolt); }
+    .plat-opt.bolt.sel { border-color: var(--bolt); background: rgba(52,209,134,.12); color: var(--bolt); }
+
+    /* ── OCR ── */
+    .ocr-zone {
+      border: 2px dashed var(--surf2); border-radius: 12px;
+      padding: 18px; text-align: center; cursor: pointer;
+      transition: border-color .2s; margin-bottom: 10px;
+    }
+    .ocr-zone:hover { border-color: var(--acc); }
+    .ocr-zone .oico { font-size: 30px; margin-bottom: 6px; }
+    .ocr-zone p { font-size: 13px; color: var(--txt2); }
+    #ocr-file { display: none; }
+    .ocr-prog { background: var(--surf2); border-radius: 6px; height: 6px; overflow: hidden; margin: 8px 0 4px; }
+    .ocr-bar  { height: 100%; background: var(--acc); border-radius: 6px; transition: width .3s; }
+    .ocr-stat { font-size: 12px; color: var(--txt2); text-align: center; margin-bottom: 8px; }
+    .ocr-text {
+      background: var(--bg); border-radius: 10px; padding: 10px 12px;
+      font-size: 12px; color: var(--txt2); white-space: pre-wrap;
+      max-height: 130px; overflow-y: auto; margin-bottom: 6px;
+    }
+    .ocr-hint { font-size: 11px; color: var(--txt2); margin-bottom: 10px; }
+
+    /* ── Geocode indicator ── */
+    .geo-ind {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px; background: rgba(99,102,241,.1);
+      border-radius: 8px; font-size: 12px; color: var(--acc); margin-top: 6px;
+    }
+    .spin {
+      width: 13px; height: 13px; border: 2px solid var(--acc);
+      border-top-color: transparent; border-radius: 50%;
+      animation: spin .8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      width: 100%; padding: 15px; background: var(--acc); color: #fff;
+      border: none; border-radius: 13px; font-size: 16px; font-weight: 700;
+      cursor: pointer; margin-top: 6px;
+    }
+    .btn-secondary {
+      width: 100%; padding: 13px; background: var(--surf2); color: var(--txt);
+      border: none; border-radius: 13px; font-size: 15px; font-weight: 600;
+      cursor: pointer; margin-top: 8px;
+    }
+    .btn-danger {
+      width: 100%; padding: 13px; background: rgba(239,68,68,.15); color: var(--err);
+      border: none; border-radius: 13px; font-size: 15px; font-weight: 600;
+      cursor: pointer; margin-top: 8px;
+    }
+
+    /* ── Route screen ── */
+    .opt-btn {
+      width: 100%; padding: 15px;
+      background: linear-gradient(135deg, var(--acc), #818cf8);
+      color: #fff; border: none; border-radius: 13px;
+      font-size: 16px; font-weight: 800; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      margin-bottom: 14px;
+    }
+    .route-summary {
+      background: var(--surf); border-radius: 14px;
+      display: flex; justify-content: space-around;
+      padding: 14px; margin-bottom: 14px;
+    }
+    .rstat { text-align: center; }
+    .rstat-val { font-size: 22px; font-weight: 800; color: var(--acc); }
+    .rstat-lbl { font-size: 11px; color: var(--txt2); margin-top: 3px; }
+    .rcard {
+      background: var(--surf); border-radius: 14px;
+      padding: 13px 14px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .rnum {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 800; flex-shrink: 0; color: #fff;
+    }
+    .rnum.pickup   { background: var(--warn); }
+    .rnum.delivery { background: var(--ok); }
+    .rinfo { flex: 1; min-width: 0; }
+    .rtype { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+    .rtype.pickup   { color: var(--warn); }
+    .rtype.delivery { color: var(--ok); }
+    .raddr { font-size: 14px; font-weight: 500; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rmeta { font-size: 12px; color: var(--txt2); margin-top: 2px; }
+    .rnav {
+      background: rgba(99,102,241,.15); color: var(--acc);
+      border: none; border-radius: 10px; padding: 8px 12px;
+      font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    }
+
+    /* ── Map legend ── */
+    .map-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+    .leg-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--txt2); }
+    .leg-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); }
+
+    /* ── Install banner ── */
+    #install-banner {
+      display: none; position: fixed; bottom: 72px; left: 12px; right: 12px;
+      background: var(--surf); border: 1px solid var(--acc); border-radius: 16px;
+      padding: 14px 16px; z-index: 80;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+      flex-direction: row; align-items: center; gap: 12px;
+    }
+    #install-banner.show { display: flex; }
+    #install-banner .ib-icon { font-size: 30px; flex-shrink: 0; }
+    #install-banner .ib-text { flex: 1; }
+    #install-banner .ib-title { font-size: 14px; font-weight: 700; }
+    #install-banner .ib-sub { font-size: 12px; color: var(--txt2); margin-top: 2px; }
+    #install-banner .ib-btn {
+      background: var(--acc); color: #fff; border: none; border-radius: 10px;
+      padding: 10px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    #install-banner .ib-x {
+      background: none; border: none; color: var(--txt2);
+      font-size: 18px; cursor: pointer; flex-shrink: 0;
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+      background: var(--surf2); color: var(--txt);
+      padding: 10px 18px; border-radius: 12px; font-size: 14px;
+      z-index: 999; opacity: 0; transition: opacity .25s;
+      pointer-events: none; white-space: nowrap;
+      box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--surf2); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<div id="offline-bar">⚠️ Ești offline — comenzile salvate sunt disponibile</div>
+
+<!-- HEADER -->
+<div id="header">
+  <h1>🛵 CourierRoute</h1>
+  <div id="order-badge">0 comenzi</div>
+</div>
+
+<!-- SCREEN: COMENZI -->
+<div id="scr-orders" class="screen active">
+  <div id="orders-empty" class="empty">
+    <div class="eico">📦</div>
+    <h3>Nicio comandă activă</h3>
+    <p>Apasă <strong>+</strong> pentru a adăuga o comandă Wolt sau Bolt Food</p>
+  </div>
+  <div id="orders-list"></div>
+</div>
+
+<!-- SCREEN: RUTĂ -->
+<div id="scr-route" class="screen">
+  <button class="opt-btn" onclick="optimizeRoute()">🗺️ Optimizează Ruta</button>
+  <div id="route-content">
+    <div class="empty">
+      <div class="eico">🗺️</div>
+      <h3>Nicio rută calculată</h3>
+      <p>Adaugă comenzi și apasă butonul de mai sus</p>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: HARTĂ -->
+<div id="scr-map">
+  <div class="map-legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div>Ridicare</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div>Livrare</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#6366f1"></div>Rută optimizată</div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<!-- FAB -->
+<button id="fab" onclick="openModal()">＋</button>
+
+<!-- TAB BAR -->
+<div id="tabbar">
+  <button class="tab active" onclick="goTab('orders',this)">
+    <span class="ico">📋</span>Comenzi
+  </button>
+  <button class="tab" onclick="goTab('route',this)">
+    <span class="ico">🗺️</span>Rută
+  </button>
+  <button class="tab" onclick="goTab('map',this)">
+    <span class="ico">🌍</span>Hartă
+  </button>
+</div>
+
+<!-- MODAL: ADD ORDER -->
+<div class="overlay" id="modal-add">
+  <div class="modal">
+    <div class="modal-title">
+      <span>➕ Comandă Nouă</span>
+      <button class="btn-x" onclick="closeModal()">✕</button>
+    </div>
+
+    <div class="fgroup">
+      <label class="flabel">Platformă</label>
+      <div class="plat-sel">
+        <button class="plat-opt wolt sel" id="btn-wolt" onclick="setPlatform('wolt')">🔵 Wolt</button>
+        <button class="plat-opt bolt"     id="btn-bolt" onclick="setPlatform('bolt')">🟢 Bolt Food</button>
+      </div>
+    </div>
+
+    <div class="fgroup">
+      <label class="flabel">📸 Import Screenshot (OCR)</label>
+      <div class="ocr-zone" onclick="document.getElementById('ocr-file').click()">
+        <div class="oico">📷</div>
+        <p>Fotografiază ecranul comenzii sau încarcă un screenshot</p>
+      </div>
+      <input type="file" id="ocr-file" accept="image/*" capture="environment" onchange="runOCR(this)">
+      <div id="ocr-prog-wrap" style="display:none">
+        <div class="ocr-prog"><div class="ocr-bar" id="ocr-bar" style="width:0%"></div></div>
+        <div class="ocr-stat" id="ocr-stat-txt">Se procesează...</div>
+      </div>
+      <div id="ocr-out-wrap" style="display:none">
+        <div class="ocr-text" id="ocr-raw"></div>
+        <p class="ocr-hint">👆 Adresele detectate sunt completate automat mai jos. Corectează dacă e necesar.</p>
+      </div>
+    </div>
+
+    <div class="fgroup">
+      <label class="flabel">🏪 Restaurant / Ridicare</label>
+      <input type="text" class="finput" id="f-rest-name" placeholder="Numele restaurantului (opțional)" autocomplete="off">
+      <input type="text" class="finput" id="f-rest-addr" placeholder="Adresa restaurantului, București" autocomplete="off">
+      <div id="geo-rest"></div>
+    </div>
+
+    <div class="fgroup">
+      <label class="flabel">📍 Client / Livrare</label>
+      <input type="text" class="finput" id="f-cli-addr" placeholder="Adresa clientului, București" autocomplete="off">
+      <div id="geo-cli"></div>
+    </div>
+
+    <button class="btn-primary" onclick="addOrder()">✅ Adaugă Comanda</button>
+    <button class="btn-secondary" onclick="closeModal()">Anulează</button>
+  </div>
+</div>
+
+<!-- INSTALL BANNER -->
+<div id="install-banner">
+  <div class="ib-icon">🛵</div>
+  <div class="ib-text">
+    <div class="ib-title">Instalează CourierRoute</div>
+    <div class="ib-sub">Adaugă pe ecranul principal</div>
+  </div>
+  <button class="ib-btn" onclick="doInstall()">Instalează</button>
+  <button class="ib-x" onclick="this.closest('#install-banner').classList.remove('show')">✕</button>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════
+let orders   = JSON.parse(localStorage.getItem('cr_orders')   || '[]');
+let route    = [];
+let platform = 'wolt';
+let map      = null;
+let markers  = [];
+let geoCache = JSON.parse(localStorage.getItem('cr_geocache') || '{}');
+
+function save()      { localStorage.setItem('cr_orders',   JSON.stringify(orders)); }
+function saveCache() { localStorage.setItem('cr_geocache', JSON.stringify(geoCache)); }
+
+// ═══════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════
+function toast(msg, ms = 2600) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+function goTab(name, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('scr-map').classList.remove('active');
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  if (name === 'map') {
+    document.getElementById('scr-map').classList.add('active');
+    initMap();
+  } else {
+    document.getElementById('scr-' + name).classList.add('active');
+  }
+  btn.classList.add('active');
+}
+
+function setPlatform(p) {
+  platform = p;
+  document.getElementById('btn-wolt').classList.toggle('sel', p === 'wolt');
+  document.getElementById('btn-bolt').classList.toggle('sel', p === 'bolt');
+}
+
+function openModal() {
+  document.getElementById('modal-add').classList.add('open');
+  ['f-rest-name','f-rest-addr','f-cli-addr'].forEach(id => document.getElementById(id).value = '');
+  ['geo-rest','geo-cli'].forEach(id => document.getElementById(id).innerHTML = '');
+  document.getElementById('ocr-out-wrap').style.display  = 'none';
+  document.getElementById('ocr-prog-wrap').style.display = 'none';
+  document.getElementById('ocr-file').value = '';
+  setPlatform('wolt');
+}
+
+function closeModal() {
+  document.getElementById('modal-add').classList.remove('open');
+}
+
+document.getElementById('modal-add').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ═══════════════════════════════════════════════════════
+// GEOCODING  (Nominatim + cache)
+// ═══════════════════════════════════════════════════════
+async function geocode(addr) {
+  const key = addr.toLowerCase().trim();
+  if (geoCache[key]) return geoCache[key];
+  try {
+    const q = encodeURIComponent(addr + ', România');
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&accept-language=ro`,
+      { headers: { 'User-Agent': 'CourierRoute/1.0' } }
+    );
+    const d = await r.json();
+    if (d && d.length > 0) {
+      const res = { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+      geoCache[key] = res;
+      saveCache();
+      return res;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════
+// OCR (Tesseract.js)
+// ═══════════════════════════════════════════════════════
+async function runOCR(input) {
+  if (!input.files || !input.files[0]) return;
+  const pw  = document.getElementById('ocr-prog-wrap');
+  const bar = document.getElementById('ocr-bar');
+  const st  = document.getElementById('ocr-stat-txt');
+  const ow  = document.getElementById('ocr-out-wrap');
+  const raw = document.getElementById('ocr-raw');
+
+  pw.style.display = 'block';
+  ow.style.display = 'none';
+  bar.style.width  = '0%';
+  st.textContent   = 'Se inițializează OCR...';
+
+  try {
+    const { data: { text } } = await Tesseract.recognize(input.files[0], 'ron+eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          bar.style.width = Math.round(m.progress * 100) + '%';
+          st.textContent  = `Recunoaștere text: ${Math.round(m.progress * 100)}%`;
+        } else {
+          st.textContent = m.status;
+        }
+      }
+    });
+    pw.style.display = 'none';
+    ow.style.display = 'block';
+    raw.textContent  = text;
+
+    const det = parseAddresses(text);
+    if (det.restaurant) {
+      document.getElementById('f-rest-addr').value = det.restaurant;
+      toast('✅ Adresă restaurant detectată!');
+    }
+    if (det.client) {
+      document.getElementById('f-cli-addr').value = det.client;
+    }
+    if (!det.restaurant && !det.client) {
+      toast('⚠️ Adrese nedetectate — copiază manual din text');
+    }
+  } catch (e) {
+    pw.style.display = 'none';
+    toast('❌ Eroare OCR');
+  }
+}
+
+function parseAddresses(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+  const addrRe = /\b(strada|str\.?|bulevardul|bd\.?|calea|aleea|ale\.?|piața|pia\.?|șoseaua|sos\.?|intrarea|int\.?)\s+[\wăâîșțĂÂÎȘȚ\s\-]+\d+/gi;
+  const pickKw = ['ridicare','restaurant','pickup','preluare','merchant'];
+  const delKw  = ['livrare','client','delivery','destinat'];
+
+  let restAddr = null, cliAddr = null;
+  let allFound = [];
+  for (const line of lines) {
+    const m = line.match(addrRe);
+    if (m) allFound.push(...m);
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const low  = lines[i].toLowerCase();
+    const next = lines[i + 1] || '';
+    if (pickKw.some(k => low.includes(k)) && !restAddr) {
+      const c = next.length > 8 ? next : lines[i];
+      if (/\d/.test(c) || c.length > 12) restAddr = c;
+    }
+    if (delKw.some(k => low.includes(k)) && !cliAddr) {
+      const c = next.length > 8 ? next : lines[i];
+      if (/\d/.test(c) || c.length > 12) cliAddr = c;
+    }
+  }
+  if (!restAddr && allFound.length > 0) restAddr = allFound[0];
+  if (!cliAddr  && allFound.length > 1) cliAddr  = allFound[1];
+  return { restaurant: restAddr, client: cliAddr };
+}
+
+// ═══════════════════════════════════════════════════════
+// ORDERS
+// ═══════════════════════════════════════════════════════
+async function addOrder() {
+  const restName = document.getElementById('f-rest-name').value.trim();
+  const restAddr = document.getElementById('f-rest-addr').value.trim();
+  const cliAddr  = document.getElementById('f-cli-addr').value.trim();
+  if (!restAddr || !cliAddr) { toast('⚠️ Completează ambele adrese!'); return; }
+
+  const gr = document.getElementById('geo-rest');
+  const gc = document.getElementById('geo-cli');
+  gr.innerHTML = '<div class="geo-ind"><div class="spin"></div>Geocodare restaurant...</div>';
+  gc.innerHTML = '<div class="geo-ind"><div class="spin"></div>Geocodare client...</div>';
+
+  const [rc, cc] = await Promise.all([geocode(restAddr), geocode(cliAddr)]);
+
+  gr.innerHTML = rc
+    ? '<div class="geo-ind" style="color:var(--ok)">✅ Adresă localizată</div>'
+    : '<div class="geo-ind" style="color:var(--err)">⚠️ Negăsit — verifică adresa</div>';
+  gc.innerHTML = cc
+    ? '<div class="geo-ind" style="color:var(--ok)">✅ Adresă localizată</div>'
+    : '<div class="geo-ind" style="color:var(--err)">⚠️ Negăsit — verifică adresa</div>';
+
+  orders.push({
+    id:       Date.now(),
+    platform: platform,
+    rest: { name: restName || 'Restaurant', addr: restAddr, lat: rc?.lat || null, lng: rc?.lng || null },
+    cli:  { addr: cliAddr, lat: cc?.lat || null, lng: cc?.lng || null }
+  });
+  save();
+  renderOrders();
+  route = [];
+  closeModal();
+  toast(`✅ Comandă ${platform === 'wolt' ? 'Wolt' : 'Bolt Food'} adăugată!`);
+}
+
+function deleteOrder(id) {
+  if (!confirm('Ștergi această comandă?')) return;
+  orders = orders.filter(o => o.id !== id);
+  save(); renderOrders(); route = [];
+  toast('🗑️ Comandă ștearsă');
+}
+
+function renderOrders() {
+  const list  = document.getElementById('orders-list');
+  const empty = document.getElementById('orders-empty');
+  const badge = document.getElementById('order-badge');
+  if (orders.length === 0) {
+    empty.style.display = 'block'; list.innerHTML = '';
+    badge.style.display = 'none'; return;
+  }
+  empty.style.display = 'none';
+  badge.style.display = 'block';
+  badge.textContent   = `${orders.length} comenzi`;
+  list.innerHTML = orders.map(o => `
+    <div class="order-card ${o.platform}">
+      <div class="order-head">
+        <span class="plat-badge ${o.platform}">${o.platform === 'wolt' ? '🔵 Wolt' : '🟢 Bolt Food'}</span>
+        <button class="del-btn" onclick="deleteOrder(${o.id})">🗑️</button>
+      </div>
+      <div class="stop-row">
+        <div class="stop-ico rest">🍽️</div>
+        <div>
+          <div class="stop-lbl">Ridicare</div>
+          ${o.rest.name !== 'Restaurant' ? `<div class="stop-name">${o.rest.name}</div>` : ''}
+          <div class="stop-addr">${o.rest.addr}</div>
+          <div class="stop-geo ${o.rest.lat ? 'geo-ok' : 'geo-fail'}">${o.rest.lat ? '📍 Localizat' : '⚠️ Fără coordonate'}</div>
+        </div>
+      </div>
+      <div class="vline"></div>
+      <div class="stop-row" style="padding-bottom:12px">
+        <div class="stop-ico cli">📦</div>
+        <div>
+          <div class="stop-lbl">Livrare</div>
+          <div class="stop-addr">${o.cli.addr}</div>
+          <div class="stop-geo ${o.cli.lat ? 'geo-ok' : 'geo-fail'}">${o.cli.lat ? '📍 Localizat' : '⚠️ Fără coordonate'}</div>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// ROUTE OPTIMIZATION  (Nearest Neighbor TSP)
+// ═══════════════════════════════════════════════════════
+function haversine(a, b) {
+  const R = 6371, r = Math.PI / 180;
+  const dL = (b.lat - a.lat) * r, dN = (b.lng - a.lng) * r;
+  const x  = Math.sin(dL/2)**2 + Math.cos(a.lat*r) * Math.cos(b.lat*r) * Math.sin(dN/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function optimizeRoute() {
+  const valid = orders.filter(o => o.rest.lat && o.cli.lat);
+  if (orders.length === 0) { toast('⚠️ Adaugă cel puțin o comandă!'); return; }
+  if (valid.length === 0)  { toast('⚠️ Nicio comandă cu adrese geocodate valide!'); return; }
+
+  let stops = [];
+  valid.forEach(o => {
+    stops.push({ type:'pickup',   orderId:o.id, platform:o.platform, lat:o.rest.lat, lng:o.rest.lng, addr:o.rest.addr, label:o.rest.name });
+    stops.push({ type:'delivery', orderId:o.id, platform:o.platform, lat:o.cli.lat,  lng:o.cli.lng,  addr:o.cli.addr,  label:'Client' });
+  });
+
+  let visited = new Set(), pickedUp = new Set(), result = [];
+  let cur = { lat: stops[0].lat, lng: stops[0].lng };
+
+  while (result.length < stops.length) {
+    const avail = stops.filter(s =>
+      !visited.has(s.orderId + s.type) &&
+      !(s.type === 'delivery' && !pickedUp.has(s.orderId))
+    );
+    if (!avail.length) break;
+    let best = avail[0], bestD = haversine(cur, best);
+    for (const s of avail) {
+      const d = haversine(cur, s);
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    result.push({ ...best, dist: bestD });
+    visited.add(best.orderId + best.type);
+    if (best.type === 'pickup') pickedUp.add(best.orderId);
+    cur = best;
+  }
+
+  route = result;
+  renderRoute(result);
+  updateMapMarkers();
+  goTab('route', document.querySelectorAll('.tab')[1]);
+}
+
+function renderRoute(r) {
+  const cont = document.getElementById('route-content');
+  if (!r || r.length === 0) {
+    cont.innerHTML = `<div class="empty"><div class="eico">🗺️</div><h3>Nicio rută</h3><p>Adaugă comenzi și apasă Optimizează</p></div>`;
+    return;
+  }
+  const totalKm  = r.reduce((s, x) => s + (x.dist || 0), 0);
+  const totalMin = Math.round(totalKm / 20 * 60);
+  cont.innerHTML = `
+    <div class="route-summary">
+      <div class="rstat"><div class="rstat-val">${r.length}</div><div class="rstat-lbl">Opriri</div></div>
+      <div class="rstat"><div class="rstat-val">${totalKm.toFixed(1)}</div><div class="rstat-lbl">km total</div></div>
+      <div class="rstat"><div class="rstat-val">~${totalMin}</div><div class="rstat-lbl">min estimat</div></div>
+    </div>
+    ${r.map((s, i) => `
+      <div class="rcard">
+        <div class="rnum ${s.type}">${i + 1}</div>
+        <div class="rinfo">
+          <div class="rtype ${s.type}">${s.type === 'pickup' ? '🍽️ RIDICARE' : '📦 LIVRARE'}
+            <span style="color:var(--txt2);font-weight:400;text-transform:none"> · ${s.platform === 'wolt' ? 'Wolt' : 'Bolt Food'}</span>
+          </div>
+          <div class="raddr" title="${s.addr}">${s.addr}</div>
+          <div class="rmeta">${s.label}${s.dist ? ` · ${s.dist.toFixed(1)} km · ~${Math.round(s.dist/20*60)} min` : ''}</div>
+        </div>
+        <button class="rnav" onclick="navTo(${s.lat},${s.lng})">🧭 Nav</button>
+      </div>`).join('')}
+    <button class="btn-danger" onclick="clearAll()" style="margin-top:4px">🗑️ Șterge Toate Comenzile</button>`;
+}
+
+function navTo(lat, lng) {
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank');
+}
+
+function clearAll() {
+  if (!confirm('Ștergi toate comenzile?')) return;
+  orders = []; route = [];
+  save(); renderOrders(); renderRoute(null);
+  goTab('orders', document.querySelectorAll('.tab')[0]);
+  toast('✅ Comenzi șterse');
+}
+
+// ═══════════════════════════════════════════════════════
+// MAP (Leaflet)
+// ═══════════════════════════════════════════════════════
+function initMap() {
+  if (map) { map.invalidateSize(); updateMapMarkers(); return; }
+  map = L.map('map', { zoomControl: true }).setView([44.4268, 26.1025], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 19
+  }).addTo(map);
+  updateMapMarkers();
+}
+
+function updateMapMarkers() {
+  if (!map) return;
+  markers.forEach(m => m.remove());
+  markers = [];
+  const bounds = [];
+
+  orders.filter(o => o.rest.lat || o.cli.lat).forEach((o, idx) => {
+    if (o.rest.lat) {
+      const m = L.circleMarker([o.rest.lat, o.rest.lng], { radius:10, fillColor:'#f59e0b', color:'#fff', weight:2.5, fillOpacity:1 }).addTo(map);
+      m.bindPopup(`<b>🍽️ Ridicare ${idx+1}</b><br>${o.rest.name}<br><small>${o.rest.addr}</small>`);
+      markers.push(m); bounds.push([o.rest.lat, o.rest.lng]);
+    }
+    if (o.cli.lat) {
+      const m = L.circleMarker([o.cli.lat, o.cli.lng], { radius:10, fillColor:'#22c55e', color:'#fff', weight:2.5, fillOpacity:1 }).addTo(map);
+      m.bindPopup(`<b>📦 Livrare ${idx+1}</b><br><small>${o.cli.addr}</small>`);
+      markers.push(m); bounds.push([o.cli.lat, o.cli.lng]);
+    }
+  });
+
+  if (route.length > 0) {
+    const pts = route.filter(s => s.lat && s.lng).map(s => [s.lat, s.lng]);
+    markers.push(L.polyline(pts, { color:'#6366f1', weight:3.5, opacity:.75, dashArray:'10,5' }).addTo(map));
+    route.forEach((s, i) => {
+      if (!s.lat) return;
+      const icon = L.divIcon({
+        html: `<div style="background:${s.type==='pickup'?'#f59e0b':'#22c55e'};color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)">${i+1}</div>`,
+        className: '', iconSize: [22,22], iconAnchor: [11,11]
+      });
+      const m = L.marker([s.lat, s.lng], { icon }).addTo(map);
+      m.bindPopup(`<b>${i+1}. ${s.type==='pickup'?'🍽️ Ridicare':'📦 Livrare'}</b><br><small>${s.addr}</small>`);
+      markers.push(m);
+    });
+  }
+  if (bounds.length > 0) map.fitBounds(bounds, { padding: [30,30] });
+}
+
+// ═══════════════════════════════════════════════════════
+// PWA: SERVICE WORKER
+// ═══════════════════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(r => console.log('SW ok:', r.scope))
+      .catch(e => console.warn('SW skip:', e));
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// PWA: INSTALL PROMPT
+// ═══════════════════════════════════════════════════════
+let deferredInstall = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstall = e;
+  if (!window.matchMedia('(display-mode: standalone)').matches) {
+    document.getElementById('install-banner').classList.add('show');
+  }
+});
+
+window.addEventListener('appinstalled', () => {
+  document.getElementById('install-banner').classList.remove('show');
+  toast('🎉 Aplicația instalată!');
+});
+
+function doInstall() {
+  if (deferredInstall) {
+    deferredInstall.prompt();
+    deferredInstall.userChoice.then(() => {
+      document.getElementById('install-banner').classList.remove('show');
+      deferredInstall = null;
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// ONLINE / OFFLINE
+// ═══════════════════════════════════════════════════════
+function syncOnline() {
+  document.getElementById('offline-bar').classList.toggle('show', !navigator.onLine);
+}
+window.addEventListener('online',  syncOnline);
+window.addEventListener('offline', syncOnline);
+syncOnline();
+
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
+renderOrders();
+</script>
+</body>
+</html>

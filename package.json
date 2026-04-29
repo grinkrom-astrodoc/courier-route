@@ -1,0 +1,13 @@
+{
+  "name": "courier-route",
+  "version": "1.0.0",
+  "description": "Organizează comenzile Wolt și Bolt Food cu rută optimizată",
+  "private": true,
+  "dependencies": {
+    "@capacitor/android": "6.1.2",
+    "@capacitor/core": "6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "6.1.2"
+  }
+}
